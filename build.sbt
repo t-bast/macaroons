@@ -6,3 +6,4 @@ scalaVersion := "2.13.2"
 
 libraryDependencies += "org.scalactic" %% "scalactic" % "3.1.2"
 libraryDependencies += "org.scalatest" %% "scalatest" % "3.1.2" % "test"
+libraryDependencies += "org.scodec" %% "scodec-bits" % "1.1.14"
