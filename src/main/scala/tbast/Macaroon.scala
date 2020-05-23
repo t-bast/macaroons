@@ -63,15 +63,15 @@ case class Macaroon(location: String, id: ByteVector, caveats: Queue[Caveat], si
     discharges.map(discharge => discharge.copy(sig = bindForRequest(discharge.sig)))
   }
 
-  private def validate(topLevelMacaroon: Macaroon, rootKey: ByteVector, dischargeMacaroons: Set[Macaroon]): Boolean = {
+  private def validate(topLevelMacaroon: Macaroon, rootKey: ByteVector, dischargeMacaroons: Set[Macaroon], validateFirstPartyCaveat: ByteVector => Boolean): Boolean = {
     val (expectedSig, caveatsOk) = caveats.foldLeft((Hmac.compute(rootKey, id), true)) {
       case ((currentSig, currentOk), caveat) =>
         val nextSig = Hmac.compute(currentSig, caveat.signedBytes)
         val nextOk = currentOk && (caveat match {
-          case FirstPartyCaveat(predicate) => true
+          case FirstPartyCaveat(predicate) => validateFirstPartyCaveat(predicate)
           case ThirdPartyCaveat(_, id, keyId) => dischargeMacaroons.find(_.id == id).flatMap(discharge => {
             Cipher.decrypt(currentSig, keyId).toOption.map(thirdPartyRootKey => {
-              discharge.validate(topLevelMacaroon, thirdPartyRootKey, dischargeMacaroons)
+              discharge.validate(topLevelMacaroon, thirdPartyRootKey, dischargeMacaroons, _ => true)
             })
           }).getOrElse(false)
         })
@@ -81,8 +81,15 @@ case class Macaroon(location: String, id: ByteVector, caveats: Queue[Caveat], si
     caveatsOk && sigOk
   }
 
-  def validate(rootKey: ByteVector, dischargeMacaroons: Set[Macaroon]): Boolean = {
-    validate(this, rootKey, dischargeMacaroons)
+  /**
+   * Validate the macaroon's signature and caveats.
+   *
+   * @param rootKey                  high-entropy root key (should be retrieved based on the macaroon id).
+   * @param dischargeMacaroons       there must be a valid discharge macaroon for each third-party caveat.
+   * @param validateFirstPartyCaveat application-specific logic to validate first-party caveats.
+   */
+  def validate(rootKey: ByteVector, dischargeMacaroons: Set[Macaroon], validateFirstPartyCaveat: ByteVector => Boolean): Boolean = {
+    validate(this, rootKey, dischargeMacaroons, validateFirstPartyCaveat)
   }
 
 }
