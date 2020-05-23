@@ -1,5 +1,8 @@
 # Macaroons
 
+[![Build Status](https://travis-ci.org/t-bast/macaroons.svg?branch=master)](https://travis-ci.org/t-bast/macaroons)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+
 This library implements macaroons as described in the paper
 ["Macaroons: Cookies with Contextual Caveats for Decentralized Authorization in the Cloud"](https://research.google/pubs/pub41892/).
 
