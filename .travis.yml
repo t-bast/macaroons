@@ -1,1 +1,4 @@
 language: scala
+dist: bionic
+scala:
+  - 2.13.2
