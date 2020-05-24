@@ -63,21 +63,21 @@ case class Macaroon(location: String, id: ByteVector, caveats: Queue[Caveat], si
     discharges.map(discharge => discharge.copy(sig = bindForRequest(discharge.sig)))
   }
 
-  private def validate(topLevelMacaroon: Macaroon, rootKey: ByteVector, dischargeMacaroons: Set[Macaroon], validateFirstPartyCaveat: ByteVector => Boolean): Boolean = {
-    val (expectedSig, caveatsOk) = caveats.foldLeft((Hmac.compute(rootKey, id), true)) {
+  private def validateDischarge(discharge: Macaroon, thirdPartyRootKey: ByteVector, discharges: Set[Macaroon]): Boolean = {
+    val (expectedSig, caveatsOk) = discharge.caveats.foldLeft((Hmac.compute(thirdPartyRootKey, discharge.id), true)) {
       case ((currentSig, currentOk), caveat) =>
         val nextSig = Hmac.compute(currentSig, caveat.signedBytes)
         val nextOk = currentOk && (caveat match {
-          case FirstPartyCaveat(predicate) => validateFirstPartyCaveat(predicate)
-          case ThirdPartyCaveat(_, id, keyId) => dischargeMacaroons.find(_.id == id).flatMap(discharge => {
-            Cipher.decrypt(currentSig, keyId).toOption.map(thirdPartyRootKey => {
-              discharge.validate(topLevelMacaroon, thirdPartyRootKey, dischargeMacaroons, _ => true)
+          case FirstPartyCaveat(_) => true // we can't validate third-party's first-party caveats, it's their job
+          case ThirdPartyCaveat(_, id, keyId) => discharges.find(_.id == id).flatMap(discharge2 => {
+            Cipher.decrypt(currentSig, keyId).toOption.map(thirdPartyRootKey2 => {
+              validateDischarge(discharge2, thirdPartyRootKey2, discharges)
             })
           }).getOrElse(false)
         })
         (nextSig, nextOk)
     }
-    val sigOk = if (topLevelMacaroon == this) sig == expectedSig else sig == topLevelMacaroon.bindForRequest(expectedSig)
+    val sigOk = discharge.sig == bindForRequest(expectedSig)
     caveatsOk && sigOk
   }
 
@@ -89,7 +89,21 @@ case class Macaroon(location: String, id: ByteVector, caveats: Queue[Caveat], si
    * @param validateFirstPartyCaveat application-specific logic to validate first-party caveats.
    */
   def validate(rootKey: ByteVector, dischargeMacaroons: Set[Macaroon], validateFirstPartyCaveat: ByteVector => Boolean): Boolean = {
-    validate(this, rootKey, dischargeMacaroons, validateFirstPartyCaveat)
+    val (expectedSig, caveatsOk) = caveats.foldLeft((Hmac.compute(rootKey, id), true)) {
+      case ((currentSig, currentOk), caveat) =>
+        val nextSig = Hmac.compute(currentSig, caveat.signedBytes)
+        val nextOk = currentOk && (caveat match {
+          case FirstPartyCaveat(predicate) => validateFirstPartyCaveat(predicate)
+          case ThirdPartyCaveat(_, id, keyId) => dischargeMacaroons.find(_.id == id).flatMap(discharge => {
+            Cipher.decrypt(currentSig, keyId).toOption.map(thirdPartyRootKey => {
+              validateDischarge(discharge, thirdPartyRootKey, dischargeMacaroons)
+            })
+          }).getOrElse(false)
+        })
+        (nextSig, nextOk)
+    }
+    val sigOk = sig == expectedSig
+    caveatsOk && sigOk
   }
 
 }
